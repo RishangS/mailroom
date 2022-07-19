@@ -129,7 +129,6 @@ defmodule Mailroom.IMAP do
   """
   def fetch(pid, number_or_range, items_list, func \\ nil, opts \\ []) do
     {:ok, list} =
-      IO.inspect(items_to_list(items_list))
       GenServer.call(
         pid,
         {:fetch, number_or_range, items_list},
