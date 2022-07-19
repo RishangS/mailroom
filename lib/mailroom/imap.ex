@@ -34,7 +34,7 @@ defmodule Mailroom.IMAP do
 
   ## Example:
 
-      {:ok, client} = #{inspect(__MODULE__)}.connect("imap.server", "username", "password")
+      {:ok, client} = #{inspect(__MODULE__)}.connect("imap.server", "username", "authx")
       client
       |> #{inspect(__MODULE__)}.list
       |> Enum.each(fn(mail) ->
@@ -65,12 +65,12 @@ defmodule Mailroom.IMAP do
       #{inspect(__MODULE__)}.connect("imap.server", "me", "secret", ssl: true)
       {:ok, pid}
   """
-  def connect(server, username, password, options \\ []) do
+  def connect(server, username, authx, options \\ []) do
     opts = parse_opts(options)
     {:ok, pid} = GenServer.start_link(__MODULE__, opts)
     GenServer.call(pid, {:connect, server, opts.port})
 
-    case login(pid, username, password) do
+    case authenticate(pid, username, authx) do
       {:ok, _msg} -> {:ok, pid}
       {:error, reason} -> {:error, :authentication, reason}
     end
@@ -102,8 +102,8 @@ defmodule Mailroom.IMAP do
   defp set_default_port(opts),
     do: opts
 
-  defp login(pid, username, password),
-    do: GenServer.call(pid, {:login, username, password})
+  defp authenticate(pid, username, authx),
+    do: GenServer.call(pid, {:authenticate, username, authx})
 
   def select(pid, mailbox_name),
     do: GenServer.call(pid, {:select, mailbox_name}) && pid
@@ -267,15 +267,17 @@ defmodule Mailroom.IMAP do
      }}
   end
 
-  def handle_call({:login, username, password}, from, %{capability: capability} = state) do
+  def handle_call({:authenticate, username, authx}, from, %{capability: capability} = state) do
+    token = Base.encode64("user=" <> username <> "\u0001auth=Bearer " <> authx <> "\u0001\u0001")
+
     if Enum.member?(capability, "STARTTLS") do
       {:noreply,
-       send_command(from, "STARTTLS", %{state | temp: %{username: username, password: password}})}
+       send_command(from, "STARTTLS", %{state | temp: %{username: username, authx: authx}})}
     else
       {:noreply,
        send_command(
          from,
-         ["LOGIN", " ", quote_string(username), " ", quote_string(password)],
+         ["AUTHENTICATE", " ", "XOAUTH2 ", " ", token],
          state
        )}
     end
@@ -630,23 +632,40 @@ defmodule Mailroom.IMAP do
          cmd_tag,
          %{command: "STARTTLS", caller: caller},
          _msg,
-         %{socket: socket, cmd_map: cmd_map, temp: %{username: username, password: password}} =
+         %{socket: socket, cmd_map: cmd_map, temp: %{username: username, authx: authx}} =
            state
        ) do
     {:ok, ssl_socket} = Socket.ssl_client(socket)
     state = %{state | cmd_map: Map.delete(cmd_map, cmd_tag)}
     state = %{state | socket: ssl_socket, capability: nil}
 
+    token = Base.encode64("user=" <> username <> "\u0001auth=Bearer " <> authx <> "\u0001\u0001")
     {:noreply,
-     send_command(caller, ["LOGIN", " ", quote_string(username), " ", quote_string(password)], %{
+     send_command(caller, ["AUTHENTICATE", " ", "XOAUTH2 ", " ", token], %{
        state
        | temp: nil
      })}
   end
 
+  # defp process_command_response(
+  #        cmd_tag,
+  #        %{command: "LOGIN", caller: caller},
+  #        msg,
+  #        %{capability: capability} = state
+  #      ) do
+  #   state = remove_command_from_state(state, cmd_tag)
+  #   state = process_connection_message(msg, state)
+
+  #   if capability == [] do
+  #     {:noreply, send_command(caller, "CAPABILITY", %{state | temp: msg})}
+  #   else
+  #     send_reply(caller, msg, %{state | state: :authenticated})
+  #   end
+  # end
+
   defp process_command_response(
          cmd_tag,
-         %{command: "LOGIN", caller: caller},
+         %{command: "AUTHENTICATE", caller: caller},
          msg,
          %{capability: capability} = state
        ) do
