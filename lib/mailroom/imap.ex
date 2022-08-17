@@ -103,10 +103,10 @@ defmodule Mailroom.IMAP do
     do: opts
 
   defp authenticate(pid, username, authx),
-    do: GenServer.call(pid, {:authenticate, username, authx})
+    do: GenServer.call(pid, {:authenticate, username, authx}, 60_000)
 
   def select(pid, mailbox_name),
-    do: GenServer.call(pid, {:select, mailbox_name}) && pid
+    do: GenServer.call(pid, {:select, mailbox_name}, 60_000) && pid
 
   def examine(pid, mailbox_name),
     do: GenServer.call(pid, {:examine, mailbox_name}) && pid
