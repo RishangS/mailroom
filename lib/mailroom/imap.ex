@@ -543,15 +543,9 @@ defmodule Mailroom.IMAP do
   end
 
   defp process_fetch_data(data, state) do
-    # IO.inspect(data)
     x = Regex.run(~r/\A(.+ {(\d+)}\r\n)\z/sm, data)
-        IO.inspect(x)
-
     case x do
       [_, initial, bytes] ->
-        # IO.inspect(initial)
-        # IO.inspect(bytes)
-
         data = fetch_all_data(String.to_integer(bytes), 0, [initial], state)
         process_fetch_data(data, state)
 
@@ -599,10 +593,6 @@ defmodule Mailroom.IMAP do
 
   defp parse_fetch_item(:body_structure, body_structure),
     do: {:body_structure, BodyStructure.new(body_structure)}
-
-  defp parse_fetch_item(:body, body),
-  do: {:body, Mail.Parsers.RFC2822.parse(body)}
-
 
   defp parse_fetch_item(key, value),
     do: {key, value}
